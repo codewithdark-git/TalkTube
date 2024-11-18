@@ -1,0 +1,10 @@
+streamlit
+streamlit-extras
+python-dotenv
+faster-whisper
+langchain
+langchain-community
+openai
+chromadb
+yt-dlp
+ffmpeg-python
