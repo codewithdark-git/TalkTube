@@ -150,8 +150,8 @@ def main():
                         audio_path = download_youtube_audio(youtube_url, audio_path)
                     if audio_path and os.path.exists(audio_path):
                         # Transcribe
-                        with st.spinner("🔄 Transcribing audio..."):
-                            transcription = transcribe_audio(audio_path)
+                        
+                        transcription = transcribe_audio(audio_path)
                         
                         if transcription:
                             st.session_state.transcription = transcription
