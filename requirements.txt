@@ -8,3 +8,6 @@ openai
 chromadb
 yt-dlp
 ffmpeg-python
+torch
+sentence-transformers
+transformers
