@@ -81,6 +81,11 @@ def download_youtube_audio(youtube_url, output_path):
                 pass
         return None
 
+    except ConnectionError:
+        st.error(f"Error downloading audio: Check Your Internet connection")
+        return None
+
+
 def transcribe_audio(audio_path):
     """Transcribe audio using Faster Whisper."""
     try:
@@ -90,6 +95,97 @@ def transcribe_audio(audio_path):
     except Exception as e:
         st.error(f"Error transcribing audio: {str(e)}")
         return None
+
+
+@st.cache_data
+def process_video_data(youtube_url):
+    """Cache the video processing results"""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        audio_path = os.path.join(temp_dir, "audio.wav")
+        audio_path = download_youtube_audio(youtube_url, audio_path)
+        if audio_path and os.path.exists(audio_path):
+            return transcribe_audio(audio_path)
+    return None
+
+def get_video_details(url):
+    """Get video details using yt-dlp."""
+    try:
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            return {
+                'title': info.get('title', 'Unknown Title'),
+                'thumbnail': info.get('thumbnail', None),
+                'channel': info.get('uploader', 'Unknown Channel'),
+                'duration': info.get('duration', 0),
+                'view_count': info.get('view_count', 0),
+                'upload_date': info.get('upload_date', ''),
+                'description': info.get('description', ''),
+                'like_count': info.get('like_count', 0)
+            }
+    except Exception as e:
+        st.error(f"Error getting video details: {str(e)}")
+        return None
+
+def format_number(num):
+    """Format large numbers in a readable way."""
+    if num >= 1000000:
+        return f"{num/1000000:.1f}M"
+    elif num >= 1000:
+        return f"{num/1000:.1f}K"
+    return str(num)
+
+def format_date(date_str):
+    """Format date string to readable format."""
+    if len(date_str) == 8:
+        return f"{date_str[6:8]}-{date_str[4:6]}-{date_str[0:4]}"
+    return date_str
+
+def display_video_details(details):
+    """Display video thumbnail and details in a beautiful format."""
+    if details and details['thumbnail']:
+        # Create a container for video details
+        with st.container():
+            # Create columns with better proportions
+            col1, col2 = st.columns([1, 1.5], gap="large")
+            
+            with col1:
+                # Add spacing and display image
+                st.write("")
+                st.write("")
+                st.image(
+                    details['thumbnail'],
+                    width=350,
+                    caption="🎬 Preview"
+                )
+                st.write("")
+            
+            with col2:
+                # Title and channel section
+                st.markdown(f"## 🎥 {details['title']}")
+                st.markdown(f"### 👤 {details['channel']}")
+                
+                # Video stats in columns
+                stat_cols = st.columns(3)
+                
+                with stat_cols[0]:
+                    duration = f"{details['duration'] // 60}:{(details['duration'] % 60):02d}"
+                    st.metric("⏱️ Duration", duration)
+                
+                with stat_cols[1]:
+                    if details.get('view_count'):
+                        st.metric("👀 Views", format_number(details['view_count']))
+                
+                with stat_cols[2]:
+                    if details.get('like_count'):
+                        st.metric("👍 Likes", format_number(details['like_count']))
+                
+                # Upload date
+                if details.get('upload_date'):
+                    st.markdown(f"**📅 Upload Date:** {format_date(details['upload_date'])}")
 
 
 def main():
@@ -127,133 +223,134 @@ def main():
     if 'sentiment' not in st.session_state:
         st.session_state.sentiment = None
 
-    # Input for YouTube URL
-    youtube_url = st.text_input(
-        "🔗 Enter YouTube URL",
-        placeholder="https://www.youtube.com/watch?v=...",
-        help="Paste a valid YouTube video URL here"
-    )
-    
-    if youtube_url:
+    # Create a form for URL input
+    with st.form(key='url_form'):
+        youtube_url = st.text_input(
+            "🔗 Enter YouTube URL",
+            placeholder="https://www.youtube.com/watch?v=...",
+            help="Paste a valid YouTube video URL here"
+        )
+        submit_button = st.form_submit_button("Process Video")
+
+    if submit_button and youtube_url:
         if not is_valid_youtube_url(youtube_url):
             st.error("Please enter a valid YouTube URL")
             return
 
-        if st.button("Process Video"):
-            try:
-                # Create a temporary directory for audio files
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    audio_path = os.path.join(temp_dir, "audio.wav")
-                    
-                    # Download and process
-                    with st.spinner("🎵 Downloading audio..."):
-                        audio_path = download_youtube_audio(youtube_url, audio_path)
-                    if audio_path and os.path.exists(audio_path):
-                        # Transcribe
-                        
-                        transcription = transcribe_audio(audio_path)
-                        
-                        if transcription:
-                            st.session_state.transcription = transcription
-                            
-                            # Create embeddings and setup QA chain
-                            with st.spinner("🧠 Setting up QA system..."):
-                                try:
-                                    vectorstore, texts = create_embeddings_from_text(transcription)
-                                    st.session_state.qa_chain = setup_qa_chain(vectorstore)
-                                    
-                                    # Generate additional insights
-                                    with st.spinner("✨ Generating insights..."):
-                                        st.session_state.summary = generate_summary(transcription)
-                                        st.session_state.keywords = extract_keywords(transcription)
-                                        st.session_state.sentiment = analyze_sentiment(transcription)
-                                    
-                                    st.session_state.processed = True
-                                    st.success("✅ Analysis complete! Scroll down to see insights.")
-                                except Exception as e:
-                                    st.error(f"Error setting up analysis: {str(e)}")
-                                    return
+        try:
+            # First get and display video details
+            with st.spinner("📺 Loading video details..."):
+                video_details = get_video_details(youtube_url)
+                if video_details:
+                    display_video_details(video_details)
+                    st.divider()
 
-                            # Create tabs for different views
-                            tab1, tab2, tab3 = st.tabs(["📊 Summary & Insights", "📝 Transcription", "💭 Chat"])
+            # Process video with caching
+            transcription = process_video_data(youtube_url)
+            
+            if transcription:
+                st.session_state.transcription = transcription
+                
+                # Create embeddings and setup QA chain
+                with st.spinner("🧠 Setting up QA system..."):
+                    try:
+                        vectorstore, texts = create_embeddings_from_text(transcription)
+                        st.session_state.qa_chain = setup_qa_chain(vectorstore)
+                        
+                        # Generate additional insights
+                        with st.spinner("✨ Generating insights..."):
+                            st.session_state.summary = generate_summary(transcription)
+                            st.session_state.keywords = extract_keywords(transcription)
+                            st.session_state.sentiment = analyze_sentiment(transcription)
+                        
+                        st.session_state.processed = True
+                        st.success("✅ Analysis complete! Scroll down to see insights.")
+                    except Exception as e:
+                        st.error(f"Error setting up analysis: {str(e)}")
+                        return
+
+        except Exception as e:
+            st.error(f"Error processing video: {str(e)}")
+            return
+
+    # Only show tabs if processing is complete
+    if st.session_state.processed:
+        tab1, tab2, tab3 = st.tabs(["📊 Summary & Insights", "📝 Transcription", "💭 Chat"])
+        
+        with tab1:
+            # Display summary
+            st.subheader("📝 Video Summary")
+            st.info(st.session_state.summary)
+            
+            # Display insights in columns
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Display keywords
+                st.subheader("🏷️ Key Topics")
+                st.markdown(", ".join(f"`{keyword}`" for keyword in st.session_state.keywords))
+            
+            with col2:
+                # Display sentiment
+                st.subheader("🎭 Content Sentiment")
+                sentiment = st.session_state.sentiment
+                
+                # Create metrics for sentiment
+                sentiment_emoji = {
+                    "positive": "😊",
+                    "negative": "😔",
+                    "neutral": "😐"
+                }.get(sentiment["overall_sentiment"], "😐")
+                
+                st.metric(
+                    label=f"Overall Sentiment {sentiment_emoji}",
+                    value=sentiment["overall_sentiment"].upper(),
+                    delta=f"Confidence: {sentiment['confidence']:.2f}"
+                )
+                st.info(sentiment["brief_explanation"])
+        
+        with tab2:
+            st.subheader("📜 Full Transcription")
+            st.markdown(st.session_state.transcription)
+        
+        with tab3:
+            st.subheader("💭 Ask Questions")
+            # Create a form for questions
+            with st.form(key='question_form'):
+                question = st.text_input(
+                    "❓ Ask a question about the video",
+                    placeholder="Type your question here...",
+                    key="question_input"
+                )
+                ask_button = st.form_submit_button("Ask Question")
+            
+            if ask_button and question:
+                if st.session_state.qa_chain:
+                    with st.spinner("🤔 Thinking..."):
+                        try:
+                            response = get_response(st.session_state.qa_chain, question)
+                            st.session_state.conversation_history.append((question, response))
                             
-                            with tab1:
-                                # Display summary
-                                st.subheader("📝 Video Summary")
-                                st.info(st.session_state.summary)
-                                
-                                # Display insights in columns
-                                col1, col2 = st.columns(2)
-                                
-                                with col1:
-                                    # Display keywords
-                                    st.subheader("🏷️ Key Topics")
-                                    for keyword in st.session_state.keywords:
-                                        st.markdown(f"- {keyword}")
-                                
-                                with col2:
-                                    # Display sentiment
-                                    st.subheader("🎭 Content Sentiment")
-                                    sentiment = st.session_state.sentiment
-                                    
-                                    # Create metrics for sentiment
-                                    sentiment_emoji = {
-                                        "positive": "😊",
-                                        "negative": "😔",
-                                        "neutral": "😐"
-                                    }.get(sentiment["overall_sentiment"], "😐")
-                                    
-                                    st.metric(
-                                        label=f"Overall Sentiment {sentiment_emoji}",
-                                        value=sentiment["overall_sentiment"].upper(),
-                                        delta=f"Confidence: {sentiment['confidence']:.2f}"
-                                    )
-                                    st.info(sentiment["brief_explanation"])
+                            # Display conversation
+                            st.markdown(f"**👤 You:** {question}")
+                            st.success(f"**🤖 Assistant:** {response['answer']}")
                             
-                            with tab2:
-                                st.subheader("📜 Full Transcription")
-                                st.markdown(st.session_state.transcription)
+                            # Show source context in expander
+                            with st.expander("🔍 View source context"):
+                                for i, doc in enumerate(response['source_documents'], 1):
+                                    st.info(f"**Source {i}:**\n{doc.page_content}")
                             
-                            with tab3:
-                                st.subheader("💭 Ask Questions")
-                                # Question input
-                                question = st.text_input(
-                                    "❓ Ask a question about the video",
-                                    placeholder="Type your question here...",
-                                    key="question_input"
-                                )
-                                
-                                if question:
-                                    if st.session_state.qa_chain:
-                                        with st.spinner("🤔 Thinking..."):
-                                            try:
-                                                response = get_response(st.session_state.qa_chain, question)
-                                                st.session_state.conversation_history.append((question, response))
-                                                
-                                                # Display conversation
-                                                st.markdown(f"**👤 You:** {question}")
-                                                st.success(f"**🤖 Assistant:** {response['answer']}")
-                                                
-                                                # Show source context in expander
-                                                with st.expander("🔍 View source context"):
-                                                    for i, doc in enumerate(response['source_documents'], 1):
-                                                        st.info(f"**Source {i}:**\n{doc.page_content}")
-                                                
-                                                # Display conversation history
-                                                if len(st.session_state.conversation_history) > 1:
-                                                    st.subheader("Previous Conversations")
-                                                    for q, a in st.session_state.conversation_history[:-1]:
-                                                        st.markdown(f"**👤 You:** {q}")
-                                                        st.success(f"**🤖 Assistant:** {a['answer']}")
-                                                        st.divider()
-                                                        
-                                            except Exception as e:
-                                                st.error(f"Error generating response: {str(e)}")
-                                    else:
-                                        st.error("QA system is not ready. Please process the video first.")
-            except Exception as e:
-                st.error(f"An error occurred: {str(e)}")
-                return
+                            # Display conversation history
+                            if len(st.session_state.conversation_history) > 1:
+                                st.subheader("Previous Conversations")
+                                for q, a in st.session_state.conversation_history[:-1]:
+                                    st.markdown(f"**👤 You:** {q}")
+                                    st.success(f"**🤖 Assistant:** {a['answer']}")
+                                    st.divider()
+                        except Exception as e:
+                            st.error(f"Error generating response: {str(e)}")
+                else:
+                    st.error("QA system is not ready. Please process the video first.")
 
 if __name__ == "__main__":
     main()
