@@ -14,7 +14,7 @@ A powerful Streamlit application that allows users to analyze and interact with 
 
 1. Clone the repository:
 ```bash
-git clone [repository-url]
+git clone https://github.com/codewithdark-git/TalkTube.git
 cd TalkTube
 ```
 
