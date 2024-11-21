@@ -1,7 +1,7 @@
 streamlit
 streamlit-extras
 python-dotenv
-whisper
+openai-whisper
 langchain
 langchain-community
 openai
