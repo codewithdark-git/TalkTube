@@ -12,3 +12,4 @@ torch
 sentence-transformers
 transformers
 langchain_groq
+wordcloud
