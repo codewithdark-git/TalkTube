@@ -13,3 +13,5 @@ sentence-transformers
 transformers
 langchain_groq
 wordcloud
+faiss-cpu
+faiss-gpu
